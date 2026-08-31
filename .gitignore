@@ -1,0 +1,31 @@
+# ---- data ----
+# data/train.zip IS committed so teammates skip Kaggle setup.
+# Anything extracted from it, or derived from it, is not.
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+*.csv
+
+# ---- environment ----
+.venv/
+__pycache__/
+*.pyc
+
+# ---- credentials: never commit ----
+kaggle.json
+.env
+*.env
+
+# ---- notebooks ----
+.ipynb_checkpoints/
+
+# ---- model artefacts ----
+*.pkl
+*.joblib
+*.model
+
+# ---- OS clutter ----
+Thumbs.db
+desktop.ini
+.DS_Store
