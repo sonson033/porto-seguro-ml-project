@@ -171,7 +171,10 @@ def main():
     print(f"  Delta over logistic regression: {delta:+.5f}")
     print(f"  (logistic regression fold std: {lr_std:.5f}, "
           f"random forest fold std: {rf_std:.5f})")
-    print(f"  Beats std? {'yes' if abs(delta) > rf_std else 'no'}")
+    # Not abs(delta): results.md defines this as the signed delta exceeding
+    # the row's own std, so a model that's worse than LR by more than its
+    # std never reads as "yes" just because the gap is large.
+    print(f"  Beats std? {'yes' if delta > rf_std else 'no'}")
 
     print()
     print("Reproducibility check: rerunning the strongest model (random forest)")
