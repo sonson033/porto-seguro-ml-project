@@ -80,3 +80,50 @@ This updates `pyproject.toml` and `uv.lock` together, so everyone stays in sync.
 ## Notes
 
 We train on `train.csv` only. `test.csv` and `sample_submission.csv` are not in the repo — their only use is submitting to the Kaggle leaderboard. Whoever makes that submission downloads `test.csv` from Kaggle at the time.
+
+---
+
+## Evaluation
+
+All models are scored with **normalized Gini** (`2 × AUC − 1`), from `src/evaluation.py`.
+
+### The split
+
+Every row belongs to one of two parts, decided by a hash of its `id`:
+
+- **80% — training.** Everything happens here: exploration, cross-validation, model choice, tuning. Load with `load_train()`.
+- **20% — final test.** Scored once, at the very end. It takes part in no decision — not model choice, not feature selection, not tuning. Load with `load_final_test(confirm="final evaluation")`, which is deliberately awkward to call by accident.
+
+Membership depends **only** on the row's own `id`, never on its position in the file. So reordering the rows, rerunning, or running on a different machine cannot move a row across the boundary. `train_test_split(random_state=…)` does not give that guarantee — it assigns by position, and we confirmed it puts different rows in the test set after a reorder.
+
+We considered stratifying the hash by class to make the positive rates match more exactly, and rejected it: that would make a row's membership depend on which other rows are present, which is a weaker guarantee than the one above.
+
+### Cross-validation
+
+**5 stratified, shuffled folds, `random_state=42`**, on the 80% only. Stratified so every fold holds the same share of claims — which is why the spread between folds reflects the model rather than fold composition.
+
+### Two rules
+
+**Always report mean and standard deviation**, never the mean alone. It is how we tell a real improvement from noise.
+
+**Pass a Pipeline**, not a pre-processed dataset. `cross_validate_model()` calls `fit()` inside each fold, so an imputer or scaler inside a Pipeline is fitted on that fold's training rows only. Scaling everything up front lets validation rows influence training and inflates every score afterwards.
+
+### Verify it
+
+```bash
+uv run python src/evaluation.py
+```
+
+Checks the metric, the split's stability, the 80/20 proportions and the positive-rate match, and that cross-validation is reproducible.
+
+### Measured
+
+|  | rows | share | positive |
+|---|---|---|---|
+| training | 475,967 | 79.966% | 3.6685% |
+| final test | 119,245 | 20.034% | 3.5498% |
+| whole file | 595,212 | 100.000% | 3.6448% |
+
+The positive rates differ by 0.1187 percentage points — 1.95 standard errors of random sampling, which is within what random assignment produces.
+
+Logistic regression baseline (median imputation of `-1`, standardised): **Gini 0.2389 ± 0.0052** across the 5 folds.
