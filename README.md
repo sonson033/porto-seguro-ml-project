@@ -75,7 +75,7 @@ This updates `pyproject.toml` and `uv.lock` together, so everyone stays in sync.
 | `notebooks/` | exploratory work, one per person |
 | `src/` | shared code, imported by notebooks |
 | `scripts/` | runnable scripts |
-| `docs/` | charter, experiment log, retrospective |
+| `docs/` | GitHub Pages source — the published model-comparison page |
 
 ## Notes
 
@@ -131,6 +131,12 @@ Logistic regression baseline (median imputation of `-1`, standardised): **Gini 0
 ---
 
 ## Verdict — neural network vs. random forest
+
+> **[Read this as a page →](https://sonson033.github.io/porto-seguro-ml-project/)**
+> The same comparison with both architectures drawn out and the results interactive —
+> built for presenting. Source: `docs/index.html`.
+>
+> Preview it locally with `python3 -m http.server 8000 --directory docs`.
 
 We built a feedforward neural network (PyTorch; one hidden layer of 128 units, ReLU, dropout) and
 scored it on the **identical five folds** as the random forest, through the same harness. Full

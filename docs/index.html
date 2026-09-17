@@ -1,0 +1,1026 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forest vs Network &middot; Porto Seguro claim-risk ranking</title>
+<meta name="description" content="A random forest and a neural network compared on identical cross-validation folds: architectures, method, results and cost.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Forest vs Network">
+<meta property="og:description" content="A random forest and a neural network compared on identical cross-validation folds: architectures, method, results and cost.">
+<style>
+html{color-scheme:light}
+@media (prefers-color-scheme:dark){html:not([data-theme="light"]){color-scheme:dark}}
+html[data-theme="dark"]{color-scheme:dark}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --net:#2a78d6; --net-soft:rgba(42,120,214,.14);
+  --forest:#eb6834; --forest-soft:rgba(235,104,52,.14);
+  --ink:#14161a; --ink-2:#3d4047; --muted:#6b6a66;
+  --surface:#fbfbfa; --panel:#f2f2ef; --line:#dedcd6;
+  --good:#0a7d55; --bad:#b5402c;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif;
+  --disp:"Fraunces",Georgia,"Times New Roman",serif;
+  --maxw:920px;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --net:#3987e5; --net-soft:rgba(57,135,229,.20);
+    --forest:#d95926; --forest-soft:rgba(217,89,38,.20);
+    --ink:#f2f2ef; --ink-2:#c7c6c0; --muted:#9d9c96;
+    --surface:#16171a; --panel:#1f2024; --line:#32343a;
+    --good:#4cc08d; --bad:#e8836c;
+  }
+}
+:root[data-theme="dark"]{
+  --net:#3987e5; --net-soft:rgba(57,135,229,.20);
+  --forest:#d95926; --forest-soft:rgba(217,89,38,.20);
+  --ink:#f2f2ef; --ink-2:#c7c6c0; --muted:#9d9c96;
+  --surface:#16171a; --panel:#1f2024; --line:#32343a;
+  --good:#4cc08d; --bad:#e8836c;
+}
+
+*{box-sizing:border-box}
+body{background:var(--surface);color:var(--ink);font-family:var(--sans);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--maxw);margin:0 auto;padding-inline:20px}
+h1,h2,h3{font-family:var(--disp);font-weight:600;text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(2.1rem,6vw,3.4rem);letter-spacing:-.02em}
+h2{font-size:clamp(1.5rem,3.6vw,2.1rem);letter-spacing:-.015em}
+h3{font-size:1.06rem;font-family:var(--sans);font-weight:600;letter-spacing:.01em}
+p{margin:0 0 1em}
+.lede{font-size:1.09rem;color:var(--ink-2);max-width:62ch}
+.eyebrow{font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--muted);margin:0 0 .6em}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+small,.small{font-size:.83rem;color:var(--muted);line-height:1.5}
+
+/* nav */
+nav{position:sticky;top:0;z-index:40;
+  background:color-mix(in srgb,var(--surface) 92%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;gap:2px;overflow-x:auto;padding-block:8px;scrollbar-width:none}
+nav .wrap::-webkit-scrollbar{display:none}
+nav a{font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;color:var(--muted);
+  text-decoration:none;padding:5px 9px;border-radius:5px;white-space:nowrap;flex:0 0 auto}
+nav a:hover,nav a:focus-visible{color:var(--ink);background:var(--panel)}
+
+section{padding-block:clamp(40px,6vw,72px);border-bottom:1px solid var(--line)}
+section:last-of-type{border-bottom:0}
+
+/* hero */
+.hero{padding-block:clamp(36px,7vw,80px) clamp(32px,5vw,56px)}
+.verdict-strip{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);
+  font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+  border:1px solid var(--line);border-radius:999px;padding:6px 14px;margin-top:22px;color:var(--ink-2)}
+.dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+
+/* two-up */
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:28px}
+@media(max-width:640px){.duo{grid-template-columns:1fr}}
+.card{background:var(--panel);border-radius:10px;padding:20px}
+.card.net{box-shadow:inset 3px 0 0 var(--net)}
+.card.forest{box-shadow:inset 3px 0 0 var(--forest)}
+.card h3{margin-bottom:3px}
+.card .role{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.bigstat{font-family:var(--mono);font-size:2.2rem;font-weight:600;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1}
+.bigstat.net{color:var(--net)} .bigstat.forest{color:var(--forest)}
+.statlab{font-size:.78rem;color:var(--muted);margin-top:5px}
+.speclist{list-style:none;margin:16px 0 0;padding:0;font-size:.86rem}
+.speclist li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;
+  border-top:1px solid var(--line)}
+.speclist .v{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-2);text-align:right}
+
+figure{margin:22px 0 0}
+figcaption{font-size:.83rem;color:var(--muted);margin-top:10px;max-width:62ch}
+svg{max-width:100%;height:auto;display:block}
+.scroller{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* interactive bits */
+.ctl{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:20px;
+  background:var(--panel);border-radius:9px;padding:14px 16px}
+.ctl label{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted)}
+input[type=range]{flex:1 1 180px;min-width:140px;accent-color:var(--net);height:22px}
+.readout{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.9rem;font-weight:500}
+.hint{font-size:.78rem;color:var(--muted)}
+.hoverable{cursor:pointer}
+.hoverable:focus-visible{outline:2px solid var(--net);outline-offset:2px}
+
+.panelbox{background:var(--panel);border-radius:9px;padding:15px 17px;margin-top:16px;
+  font-size:.88rem;min-height:74px}
+.panelbox .t{font-weight:600;margin-bottom:3px}
+.panelbox .d{color:var(--ink-2)}
+
+table{width:100%;border-collapse:collapse;font-size:.87rem;margin-top:18px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);font-weight:500}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+tr.pick td{background:var(--net-soft)}
+
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;font-size:.83rem}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+
+.callout{border-left:3px solid var(--net);background:var(--net-soft);
+  padding:15px 18px;border-radius:0 8px 8px 0;margin-top:22px;font-size:.93rem}
+.callout.warn{border-left-color:var(--forest);background:var(--forest-soft)}
+.callout strong{font-weight:600}
+
+.split{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}
+@media(max-width:640px){.split{grid-template-columns:1fr}}
+.verdictcol{background:var(--panel);border-radius:10px;padding:18px}
+.verdictcol h3{margin-bottom:10px}
+.winrow{display:flex;justify-content:space-between;gap:10px;padding:7px 0;
+  border-top:1px solid var(--line);font-size:.87rem}
+.winrow:first-of-type{border-top:0}
+.tag{font-family:var(--mono);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;
+  padding:2px 7px;border-radius:4px;white-space:nowrap}
+.tag.net{background:var(--net-soft);color:var(--net)}
+.tag.forest{background:var(--forest-soft);color:var(--forest)}
+
+.themebtn{margin-left:auto;flex:0 0 auto;font-family:var(--mono);font-size:.85rem;
+  line-height:1;background:none;border:1px solid var(--line);color:var(--muted);
+  border-radius:5px;padding:5px 9px;cursor:pointer}
+.themebtn:hover,.themebtn:focus-visible{color:var(--ink);background:var(--panel)}
+footer a{color:var(--net)}
+footer{padding-block:34px;font-size:.8rem;color:var(--muted)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.bar,.treegrp,.dotmark{transition:all .18s ease}
+</style>
+</head>
+
+<body>
+<nav><div class="wrap">
+  <a href="#setup">Setup</a><a href="#fair">Fair fight</a><a href="#prep">Preprocessing</a>
+  <a href="#forest">Forest</a><a href="#network">Network</a><a href="#tuning">Tuning</a>
+  <a href="#metric">Result</a><a href="#capture">Impact</a><a href="#cost">Cost</a>
+  <a href="#failed">Didn't work</a><a href="#verdict">Verdict</a>
+  <button id="themeBtn" class="themebtn" type="button" aria-label="Switch colour theme" title="Theme: system / light / dark">◐</button>
+</div></nav>
+
+<header class="wrap hero">
+  <p class="eyebrow">Porto Seguro · claim-risk ranking</p>
+  <h1>A forest and a network,<br>on identical data</h1>
+  <p class="lede" style="margin-top:18px">
+    The project already had a random forest ranking 475,967 policyholders by claim risk. We built a
+    neural network and scored it on the <em>same five folds</em>, through the same harness, to answer
+    one question: is it better, and is it worth switching?
+  </p>
+  <div class="verdict-strip">
+    <span class="dot" style="background:var(--forest)"></span>
+    Verdict &mdash; ship the forest
+  </div>
+
+  <div class="duo">
+    <div class="card forest">
+      <h3>Random forest</h3>
+      <p class="role">the incumbent</p>
+      <div class="bigstat forest">0.27248</div>
+      <p class="statlab">Gini &mdash; 63.62% of pairs ranked correctly</p>
+      <ul class="speclist">
+        <li><span>Structure</span><span class="v">200 decision trees</span></li>
+        <li><span>Leaf size</span><span class="v">&ge; 50 rows</span></li>
+        <li><span>Fold spread</span><span class="v">&plusmn;0.00360</span></li>
+        <li><span>Claims in top 10%</span><span class="v">21.09%</span></li>
+      </ul>
+    </div>
+    <div class="card net">
+      <h3>Neural network</h3>
+      <p class="role">the challenger</p>
+      <div class="bigstat net">0.27801</div>
+      <p class="statlab">Gini &mdash; 63.90% of pairs ranked correctly</p>
+      <ul class="speclist">
+        <li><span>Structure</span><span class="v">1 hidden layer, 128 units</span></li>
+        <li><span>Parameters</span><span class="v">26,625</span></li>
+        <li><span>Fold spread</span><span class="v">&plusmn;0.00678</span></li>
+        <li><span>Claims in top 10%</span><span class="v">21.49%</span></li>
+      </ul>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- ─────────────────────────── setup ─────────────────────────── -->
+<section id="setup"><div class="wrap">
+  <p class="eyebrow">01 &middot; What the score means</p>
+  <h2>Gini 0.278 is not a percentage</h2>
+  <p class="lede" style="margin-top:14px">
+    Pick one person who claimed and one who didn't, at random. How often does the model put the
+    claimer higher? A coin flip gets 50%. Perfect gets 100%. Gini slides that floor down to zero, so
+    it reads as <em>how far you travelled from random towards perfect</em>.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 132" role="img" aria-label="Scale from random at 50 percent to perfect at 100 percent, with the forest at 63.62 percent and the network at 63.90 percent, which rescales to Gini 0.272 and 0.278">
+      <line x1="40" y1="78" x2="660" y2="78" stroke="currentColor" stroke-width="1.5" opacity=".3"/>
+      <line x1="40" y1="72" x2="40" y2="84" stroke="currentColor" stroke-width="1.5" opacity=".45"/>
+      <line x1="660" y1="72" x2="660" y2="84" stroke="currentColor" stroke-width="1.5" opacity=".45"/>
+      <text x="40" y="102" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".65" text-anchor="start">50% &middot; coin flip</text>
+      <text x="40" y="117" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".45" text-anchor="start">Gini 0.00</text>
+      <text x="660" y="102" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".65" text-anchor="end">100% &middot; perfect</text>
+      <text x="660" y="117" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".45" text-anchor="end">Gini 1.00</text>
+      <rect x="40" y="70" width="209" height="16" rx="3" fill="var(--net-soft)"/>
+      <line x1="209" y1="56" x2="209" y2="92" stroke="var(--forest)" stroke-width="2.5"/>
+      <line x1="249" y1="46" x2="249" y2="92" stroke="var(--net)" stroke-width="2.5"/>
+      <text x="205" y="44" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="var(--forest)" text-anchor="end" font-weight="500">forest 63.62%</text>
+      <text x="253" y="34" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="var(--net)" text-anchor="start" font-weight="500">network 63.90%</text>
+      <text x="44" y="64" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".5">covered so far</text>
+    </svg>
+    <figcaption>
+      Both models sit about a quarter of the way along. The entire distance between them &mdash; the
+      thing this whole exercise measured &mdash; is <strong>3 pairs in every 1,000</strong>.
+    </figcaption>
+  </figure>
+
+  <div class="callout">
+    Why not accuracy? Only <span class="num">3.67%</span> of people claim, so a model that answers
+    &ldquo;nobody ever claims&rdquo; is <strong>96.3% accurate</strong> and ranks nobody. That is
+    literally the first row of the project's results table: 96.3% accurate, Gini 0.0000.
+  </div>
+</div></section>
+
+<!-- ─────────────────────────── fair fight ─────────────────────────── -->
+<section id="fair"><div class="wrap">
+  <p class="eyebrow">02 &middot; Method</p>
+  <h2>Making it a fair fight</h2>
+  <p class="lede" style="margin-top:14px">
+    The network is about fifteen lines of code. Nearly all the work went into making sure the
+    comparison measured the <em>model</em> and nothing else.
+  </p>
+
+  <figure class="scroller">
+    <svg viewBox="0 0 700 260" role="img" aria-label="The 80 percent training split divided into five folds; each fold trains on four parts and is scored on the fifth, and both models receive identical folds">
+      <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="currentColor"/></marker></defs>
+
+      <text x="0" y="14" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".6">475,967 rows &middot; 17,461 claims</text>
+
+      <g id="foldrows">
+        <g class="foldrow hoverable" data-fold="1" tabindex="0"><text x="0" y="46" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".6">fold 1</text>
+          <rect x="52" y="34" width="118" height="16" rx="2" fill="var(--net)" opacity=".85"/>
+          <rect x="174" y="34" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="296" y="34" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="418" y="34" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="540" y="34" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/></g>
+        <g class="foldrow hoverable" data-fold="2" tabindex="0"><text x="0" y="72" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".6">fold 2</text>
+          <rect x="52" y="60" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="174" y="60" width="118" height="16" rx="2" fill="var(--net)" opacity=".85"/>
+          <rect x="296" y="60" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="418" y="60" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="540" y="60" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/></g>
+        <g class="foldrow hoverable" data-fold="3" tabindex="0"><text x="0" y="98" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".6">fold 3</text>
+          <rect x="52" y="86" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="174" y="86" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="296" y="86" width="118" height="16" rx="2" fill="var(--net)" opacity=".85"/>
+          <rect x="418" y="86" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="540" y="86" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/></g>
+        <g class="foldrow hoverable" data-fold="4" tabindex="0"><text x="0" y="124" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".6">fold 4</text>
+          <rect x="52" y="112" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="174" y="112" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="296" y="112" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="418" y="112" width="118" height="16" rx="2" fill="var(--net)" opacity=".85"/>
+          <rect x="540" y="112" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/></g>
+        <g class="foldrow hoverable" data-fold="5" tabindex="0"><text x="0" y="150" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".6">fold 5</text>
+          <rect x="52" y="138" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="174" y="138" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="296" y="138" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="418" y="138" width="118" height="16" rx="2" fill="currentColor" opacity=".16"/>
+          <rect x="540" y="138" width="118" height="16" rx="2" fill="var(--net)" opacity=".85"/></g>
+      </g>
+
+      <rect x="52" y="168" width="14" height="10" rx="2" fill="var(--net)" opacity=".85"/>
+      <text x="74" y="177" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".65">scored (never seen in training)</text>
+      <rect x="300" y="168" width="14" height="10" rx="2" fill="currentColor" opacity=".16"/>
+      <text x="322" y="177" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".65">trained on</text>
+
+      <line x1="350" y1="196" x2="228" y2="222" stroke="var(--forest)" stroke-width="1.5" marker-end="url(#ar)"/>
+      <line x1="350" y1="196" x2="472" y2="222" stroke="var(--net)" stroke-width="1.5" marker-end="url(#ar)"/>
+      <text x="350" y="194" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".6" text-anchor="middle">the identical five folds go to both</text>
+      <rect x="120" y="226" width="118" height="26" rx="5" fill="var(--forest-soft)" stroke="var(--forest)" stroke-width="1"/>
+      <text x="179" y="243" font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--forest)" text-anchor="middle">random forest</text>
+      <rect x="462" y="226" width="118" height="26" rx="5" fill="var(--net-soft)" stroke="var(--net)" stroke-width="1"/>
+      <text x="521" y="243" font-family="IBM Plex Mono, monospace" font-size="11" fill="var(--net)" text-anchor="middle">neural network</text>
+    </svg>
+    <figcaption>
+      Five-fold cross-validation. Every row is scored exactly once, by a model that never saw it.
+      Same rows, same order, same seed for both models &mdash; so the only variable left is the model.
+    </figcaption>
+  </figure>
+
+  <div class="callout warn">
+    <strong>The trap we had to design around.</strong> A network needs a validation slice to know
+    when to stop training; a forest doesn't. Carving that slice out of the network's training data
+    would have left it learning from <span class="num">324,000</span> rows against the forest's
+    <span class="num">381,000</span> &mdash; and any gap would then be part model, part missing data.
+    So the stopping point was fixed <em>in advance</em> on a separate practice run, exactly as the
+    forest's &ldquo;200 trees&rdquo; was. At scoring time both models train on identical rows.
+  </div>
+</div></section>
+
+<!-- ─────────────────────────── preprocessing ─────────────────────────── -->
+<section id="prep"><div class="wrap">
+  <p class="eyebrow">03 &middot; Input</p>
+  <h2>What both models actually see</h2>
+  <p class="lede" style="margin-top:14px">
+    One preprocessor, shared. If the two models saw differently-prepared data, the comparison would
+    be measuring the preparation.
+  </p>
+
+  <figure class="scroller">
+    <svg viewBox="0 0 700 214" role="img" aria-label="37 source columns split into 25 categorical columns which are one-hot encoded and 12 quantity columns which are median-imputed and standardised, producing 206 features">
+      <defs><marker id="ar2" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="currentColor"/></marker></defs>
+
+      <rect x="0" y="76" width="112" height="56" rx="6" fill="var(--panel)" stroke="var(--line)"/>
+      <text x="56" y="99" font-family="IBM Plex Mono, monospace" font-size="15" fill="currentColor" text-anchor="middle" font-weight="500">37</text>
+      <text x="56" y="116" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".6" text-anchor="middle">source columns</text>
+
+      <line x1="118" y1="94" x2="186" y2="56" stroke="currentColor" opacity=".45" stroke-width="1.3" marker-end="url(#ar2)"/>
+      <line x1="118" y1="114" x2="186" y2="152" stroke="currentColor" opacity=".45" stroke-width="1.3" marker-end="url(#ar2)"/>
+
+      <rect x="192" y="22" width="188" height="62" rx="6" fill="var(--panel)" stroke="var(--line)"/>
+      <text x="204" y="42" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".85">25 categorical</text>
+      <text x="204" y="58" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".55">one-hot encode</text>
+      <text x="204" y="73" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".55">ps_car_11_cat alone &rarr; 104</text>
+
+      <rect x="192" y="124" width="188" height="62" rx="6" fill="var(--panel)" stroke="var(--line)"/>
+      <text x="204" y="144" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".85">12 quantity</text>
+      <text x="204" y="160" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".55">&minus;1 &rarr; median impute</text>
+      <text x="204" y="175" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".55">then standardise</text>
+
+      <line x1="386" y1="53" x2="452" y2="92" stroke="currentColor" opacity=".45" stroke-width="1.3" marker-end="url(#ar2)"/>
+      <line x1="386" y1="155" x2="452" y2="116" stroke="currentColor" opacity=".45" stroke-width="1.3" marker-end="url(#ar2)"/>
+
+      <rect x="458" y="76" width="112" height="56" rx="6" fill="var(--net-soft)" stroke="var(--net)"/>
+      <text x="514" y="99" font-family="IBM Plex Mono, monospace" font-size="15" fill="var(--net)" text-anchor="middle" font-weight="500">206</text>
+      <text x="514" y="116" font-family="IBM Plex Mono, monospace" font-size="10" fill="var(--net)" opacity=".8" text-anchor="middle">features</text>
+
+      <text x="628" y="94" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".55" text-anchor="middle">fitted inside</text>
+      <text x="628" y="108" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".55" text-anchor="middle">each fold</text>
+      <line x1="576" y1="104" x2="592" y2="104" stroke="currentColor" opacity=".3" stroke-width="1"/>
+    </svg>
+    <figcaption>
+      <span class="num">&minus;1</span> is this dataset's missing-value marker, so it is imputed
+      rather than treated as the number minus one. The preprocessor is fitted <em>inside</em> each
+      fold &mdash; fitting it once up front would let the scored rows leak into training and inflate
+      every number afterwards.
+    </figcaption>
+  </figure>
+</div></section>
+
+<!-- ─────────────────────────── forest ─────────────────────────── -->
+<section id="forest"><div class="wrap">
+  <p class="eyebrow">04 &middot; Architecture</p>
+  <h2>How the forest works</h2>
+  <p class="lede" style="margin-top:14px">
+    A decision tree asks yes/no questions until it lands in a group of at least 50 similar
+    policies, then reports that group's historical claim rate. One tree is noisy. The forest grows
+    200 of them on different random slices and averages the answers.
+  </p>
+
+  <figure class="scroller">
+    <svg viewBox="0 0 700 208" role="img" aria-label="A single decision tree splitting on two features into leaves that report claim rates">
+      <g font-family="IBM Plex Mono, monospace" font-size="10.5">
+        <rect x="266" y="8" width="168" height="30" rx="5" fill="var(--forest-soft)" stroke="var(--forest)"/>
+        <text x="350" y="27" fill="var(--forest)" text-anchor="middle">ps_car_13 &lt; 0.87 ?</text>
+        <line x1="310" y1="38" x2="180" y2="72" stroke="currentColor" opacity=".45" stroke-width="1.3"/>
+        <line x1="390" y1="38" x2="520" y2="72" stroke="currentColor" opacity=".45" stroke-width="1.3"/>
+        <text x="228" y="59" fill="currentColor" opacity=".5">yes</text>
+        <text x="462" y="59" fill="currentColor" opacity=".5">no</text>
+
+        <rect x="96" y="74" width="168" height="30" rx="5" fill="var(--forest-soft)" stroke="var(--forest)"/>
+        <text x="180" y="93" fill="var(--forest)" text-anchor="middle">ps_ind_05_cat = 0 ?</text>
+        <rect x="436" y="74" width="168" height="30" rx="5" fill="var(--forest-soft)" stroke="var(--forest)"/>
+        <text x="520" y="93" fill="var(--forest)" text-anchor="middle">ps_reg_03 &lt; 0.63 ?</text>
+
+        <line x1="146" y1="104" x2="86" y2="140" stroke="currentColor" opacity=".45" stroke-width="1.3"/>
+        <line x1="214" y1="104" x2="260" y2="140" stroke="currentColor" opacity=".45" stroke-width="1.3"/>
+        <line x1="486" y1="104" x2="432" y2="140" stroke="currentColor" opacity=".45" stroke-width="1.3"/>
+        <line x1="554" y1="104" x2="608" y2="140" stroke="currentColor" opacity=".45" stroke-width="1.3"/>
+
+        <rect x="18" y="142" width="130" height="40" rx="5" fill="var(--panel)" stroke="var(--line)"/>
+        <text x="83" y="159" fill="currentColor" opacity=".55" text-anchor="middle">leaf &middot; 2,140 rows</text>
+        <text x="83" y="174" fill="currentColor" text-anchor="middle" font-weight="500">2.9% claim</text>
+        <rect x="196" y="142" width="130" height="40" rx="5" fill="var(--panel)" stroke="var(--line)"/>
+        <text x="261" y="159" fill="currentColor" opacity=".55" text-anchor="middle">leaf &middot; 890 rows</text>
+        <text x="261" y="174" fill="currentColor" text-anchor="middle" font-weight="500">6.1% claim</text>
+        <rect x="368" y="142" width="130" height="40" rx="5" fill="var(--panel)" stroke="var(--line)"/>
+        <text x="433" y="159" fill="currentColor" opacity=".55" text-anchor="middle">leaf &middot; 3,505 rows</text>
+        <text x="433" y="174" fill="currentColor" text-anchor="middle" font-weight="500">3.4% claim</text>
+        <rect x="546" y="142" width="130" height="40" rx="5" fill="var(--panel)" stroke="var(--line)"/>
+        <text x="611" y="159" fill="currentColor" opacity=".55" text-anchor="middle">leaf &middot; 1,260 rows</text>
+        <text x="611" y="174" fill="currentColor" text-anchor="middle" font-weight="500">4.8% claim</text>
+      </g>
+      <text x="350" y="202" font-family="IBM Plex Mono, monospace" font-size="10" fill="currentColor" opacity=".45" text-anchor="middle">schematic &mdash; column names are real, split values and leaf rates are illustrative</text>
+    </svg>
+    <figcaption>
+      This is the part you can read. Every prediction traces a path of plain conditions &mdash;
+      which is exactly what the network cannot offer, and why the forest scores higher on
+      interpretability.
+    </figcaption>
+  </figure>
+
+  <div class="ctl">
+    <label for="treeN">Trees in the forest</label>
+    <input type="range" id="treeN" min="1" max="200" value="1" step="1" style="accent-color:var(--forest)">
+    <span class="readout" id="treeNOut" style="color:var(--forest)">1</span>
+  </div>
+  <figure style="margin-top:14px">
+    <svg viewBox="0 0 700 120" role="img" aria-label="As trees are added the spread of the ensemble estimate narrows in proportion to one over the square root of the number of trees">
+      <line x1="40" y1="88" x2="660" y2="88" stroke="currentColor" opacity=".25" stroke-width="1"/>
+      <g id="treeFan"></g>
+      <line x1="350" y1="26" x2="350" y2="94" stroke="currentColor" opacity=".35" stroke-width="1" stroke-dasharray="3 3"/>
+      <text x="350" y="110" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".55" text-anchor="middle">the averaged prediction</text>
+      <text x="40" y="20" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="currentColor" opacity=".55">each mark = one tree's answer for the same policyholder</text>
+    </svg>
+    <figcaption id="treeCap">
+      One tree on its own is a coarse guess. <strong>Drag the slider.</strong> Averaging shrinks the
+      spread in proportion to <span class="num">1/&radic;n</span> &mdash; that is the entire trick,
+      and it is why the forest needs 200 passes at prediction time where the network needs one.
+    </figcaption>
+  </figure>
+</div></section>
+
+<!-- ─────────────────────────── network ─────────────────────────── -->
+<section id="network"><div class="wrap">
+  <p class="eyebrow">05 &middot; Architecture</p>
+  <h2>How the network works</h2>
+  <p class="lede" style="margin-top:14px">
+    No convolutions, no recurrence, no transformer. This data has no sequence and no geometry for
+    any of those to exploit &mdash; reaching for one would add cost and buy nothing.
+    <strong>Tap any layer.</strong>
+  </p>
+
+  <figure class="scroller">
+    <svg viewBox="0 0 700 190" role="img" aria-label="Network architecture: 206 inputs into a linear layer of 128 units, ReLU, dropout 0.3, then a linear layer to one output">
+      <defs><marker id="ar3" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="currentColor"/></marker></defs>
+      <g id="layers" font-family="IBM Plex Mono, monospace" font-size="10.5">
+        <g class="lyr hoverable" data-l="in" tabindex="0">
+          <rect x="4" y="52" width="92" height="66" rx="6" fill="var(--panel)" stroke="var(--line)"/>
+          <text x="50" y="80" fill="currentColor" font-size="14" text-anchor="middle" font-weight="500">206</text>
+          <text x="50" y="97" fill="currentColor" opacity=".6" text-anchor="middle">inputs</text></g>
+        <line x1="100" y1="85" x2="130" y2="85" stroke="currentColor" opacity=".4" marker-end="url(#ar3)"/>
+        <g class="lyr hoverable" data-l="fc1" tabindex="0">
+          <rect x="134" y="38" width="112" height="94" rx="6" fill="var(--net-soft)" stroke="var(--net)"/>
+          <text x="190" y="72" fill="var(--net)" font-size="13" text-anchor="middle" font-weight="500">Linear</text>
+          <text x="190" y="90" fill="var(--net)" opacity=".85" text-anchor="middle">206&rarr;128</text>
+          <text x="190" y="108" fill="var(--net)" opacity=".6" text-anchor="middle">26,496 params</text></g>
+        <line x1="250" y1="85" x2="278" y2="85" stroke="currentColor" opacity=".4" marker-end="url(#ar3)"/>
+        <g class="lyr hoverable" data-l="relu" tabindex="0">
+          <rect x="282" y="52" width="86" height="66" rx="6" fill="var(--panel)" stroke="var(--line)"/>
+          <text x="325" y="80" fill="currentColor" font-size="12" text-anchor="middle" font-weight="500">ReLU</text>
+          <text x="325" y="97" fill="currentColor" opacity=".6" text-anchor="middle">0 params</text></g>
+        <line x1="372" y1="85" x2="400" y2="85" stroke="currentColor" opacity=".4" marker-end="url(#ar3)"/>
+        <g class="lyr hoverable" data-l="drop" tabindex="0">
+          <rect x="404" y="52" width="96" height="66" rx="6" fill="var(--panel)" stroke="var(--line)" stroke-dasharray="4 3"/>
+          <text x="452" y="80" fill="currentColor" font-size="12" text-anchor="middle" font-weight="500">Dropout</text>
+          <text x="452" y="97" fill="currentColor" opacity=".6" text-anchor="middle">0.3</text></g>
+        <line x1="504" y1="85" x2="532" y2="85" stroke="currentColor" opacity=".4" marker-end="url(#ar3)"/>
+        <g class="lyr hoverable" data-l="fc2" tabindex="0">
+          <rect x="536" y="38" width="104" height="94" rx="6" fill="var(--net-soft)" stroke="var(--net)"/>
+          <text x="588" y="72" fill="var(--net)" font-size="13" text-anchor="middle" font-weight="500">Linear</text>
+          <text x="588" y="90" fill="var(--net)" opacity=".85" text-anchor="middle">128&rarr;1</text>
+          <text x="588" y="108" fill="var(--net)" opacity=".6" text-anchor="middle">129 params</text></g>
+        <line x1="644" y1="85" x2="668" y2="85" stroke="currentColor" opacity=".4" marker-end="url(#ar3)"/>
+        <g class="lyr hoverable" data-l="out" tabindex="0">
+          <text x="684" y="82" fill="currentColor" font-size="11" text-anchor="middle" opacity=".75">risk</text>
+          <text x="684" y="96" fill="currentColor" font-size="11" text-anchor="middle" opacity=".75">score</text></g>
+      </g>
+      <text x="322" y="168" font-family="IBM Plex Mono, monospace" font-size="11" fill="currentColor" opacity=".55" text-anchor="middle">26,625 trainable parameters total</text>
+    </svg>
+    <figcaption>One hidden layer. Tuning tried two and two was no better &mdash; with only 17,461 claims to learn from, the extra capacity had nothing to feed on.</figcaption>
+  </figure>
+
+  <div class="panelbox" id="lyrInfo" aria-live="polite">
+    <div class="t">Tap a layer</div>
+    <div class="d">Each block reports its shape, its parameter count, and what it is actually for.</div>
+  </div>
+
+  <div class="callout">
+    <strong>One line of code beat the entire tuning grid.</strong> The output starts at
+    <span class="num">logit(3.67%) = &minus;3.266</span> instead of zero. Without it the network
+    spends its first few hundred steps dragging one number down to meet the base rate. Worth
+    <span class="num">+0.0086</span> Gini &mdash; more than every learning-rate and batch-size choice
+    combined.
+  </div>
+
+  <table>
+    <thead><tr><th>Training setting</th><th style="text-align:right">Value</th></tr></thead>
+    <tbody>
+      <tr><td>Loss</td><td class="n">BCEWithLogits, unweighted</td></tr>
+      <tr><td>Optimizer</td><td class="n">Adam, lr 1e-3</td></tr>
+      <tr><td>Regularisation</td><td class="n">dropout 0.3 + weight decay 1e-4</td></tr>
+      <tr><td>Batch size</td><td class="n">1,024</td></tr>
+      <tr><td>Training length</td><td class="n">9 epochs = 3,348 steps</td></tr>
+      <tr><td>Seeds averaged</td><td class="n">42, 43, 44</td></tr>
+    </tbody>
+  </table>
+</div></section>
+
+<!-- ─────────────────────────── tuning ─────────────────────────── -->
+<section id="tuning"><div class="wrap">
+  <p class="eyebrow">06 &middot; Tuning</p>
+  <h2>Chosen for stability, not for the best score</h2>
+  <p class="lede" style="margin-top:14px">
+    Eight configurations: two architectures &times; two learning rates &times; two batch sizes. Their
+    scores landed within <span class="num">0.0036</span> of each other while seed-to-seed noise alone
+    was <span class="num">0.0099</span>. Picking the highest number would have been picking noise.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 330" role="img" aria-label="Scatter of eight tuning configurations: peak score on the horizontal axis against curve instability on the vertical axis. The chosen configuration has the lowest instability.">
+      <g id="tuneAxes" font-family="IBM Plex Mono, monospace" font-size="10.5"></g>
+      <g id="tuneDots"></g>
+    </svg>
+    <figcaption>
+      Lower is better on the vertical axis: it is how much a configuration's score drifts as training
+      continues. A flat configuration makes &ldquo;train for 9 epochs&rdquo; a safe instruction; a
+      peaked one makes it a bet on stopping at exactly the right moment.
+    </figcaption>
+  </figure>
+  <div class="panelbox" id="tuneInfo" aria-live="polite">
+    <div class="t">Hover a configuration</div>
+    <div class="d">All eight are statistically tied on score. They are not tied on stability.</div>
+  </div>
+</div></section>
+
+<!-- ─────────────────────────── metric ─────────────────────────── -->
+<section id="metric"><div class="wrap">
+  <p class="eyebrow">07 &middot; Result</p>
+  <h2>The network wins all five folds</h2>
+  <p class="lede" style="margin-top:14px">
+    Because both models ran on identical folds, they can be lined up fold by fold. Fold 1 is simply
+    harder than fold 2 &mdash; for both of them.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 300" role="img" aria-label="Paired comparison across five folds; the network scores higher than the forest on every fold">
+      <g id="pairAxes" font-family="IBM Plex Mono, monospace" font-size="10.5"></g>
+      <g id="pairMarks"></g>
+    </svg>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--forest)"></i> random forest</span>
+      <span><i class="sw" style="background:var(--net)"></i> neural network</span>
+    </div>
+    <figcaption id="pairCap">Hover a fold for its numbers.</figcaption>
+  </figure>
+
+  <div class="split">
+    <div class="verdictcol">
+      <h3>The team's standing rule</h3>
+      <p class="small" style="margin-bottom:10px">An improvement counts only if it is bigger than the
+      model's own fold-to-fold wobble. This rule rejected two earlier experiments, so it can't be
+      waived now.</p>
+      <div class="winrow"><span>Improvement</span><span class="num">+0.00552</span></div>
+      <div class="winrow"><span>Network's wobble</span><span class="num">0.00678</span></div>
+      <div class="winrow"><span>Verdict</span><span class="tag forest">inconclusive</span></div>
+    </div>
+    <div class="verdictcol">
+      <h3>Fold-by-fold comparison</h3>
+      <p class="small" style="margin-bottom:10px">Valid because the folds are shared, so the
+      difficulty of each fold cancels instead of counting as noise. This is the test the project
+      itself used in issue&nbsp;#13.</p>
+      <div class="winrow"><span>Folds won</span><span class="num">5 of 5</span></div>
+      <div class="winrow"><span>t statistic</span><span class="num">3.32</span></div>
+      <div class="winrow"><span>Verdict</span><span class="tag net">real</span></div>
+    </div>
+  </div>
+  <p class="small" style="margin-top:16px">
+    Both are reported rather than picking the flattering one. The honest summary: <strong>real,
+    consistent, and small.</strong>
+  </p>
+</div></section>
+
+<!-- ─────────────────────────── capture ─────────────────────────── -->
+<section id="capture"><div class="wrap">
+  <p class="eyebrow">08 &middot; Impact</p>
+  <h2>What that buys in practice</h2>
+  <p class="lede" style="margin-top:14px">
+    Sort the whole book riskiest-first and review the top slice. How many of the people who actually
+    claimed did you catch?
+  </p>
+
+  <div class="ctl">
+    <label for="cut">Review the riskiest</label>
+    <input type="range" id="cut" min="1" max="100" value="10" step="1">
+    <span class="readout" id="cutOut">10%</span>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 700 340" role="img" aria-label="Cumulative capture curve: share of claims caught against share of the book reviewed, for both models against a random baseline">
+      <g id="gainAxes" font-family="IBM Plex Mono, monospace" font-size="10.5"></g>
+      <g id="gainPlot"></g>
+    </svg>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--net)"></i> neural network</span>
+      <span><i class="sw" style="background:var(--forest)"></i> random forest</span>
+      <span><i class="sw" style="background:var(--muted)"></i> random ordering</span>
+    </div>
+    <figcaption id="gainCap"></figcaption>
+  </figure>
+
+  <div class="duo" style="margin-top:20px">
+    <div class="card net">
+      <div class="bigstat net" id="capNet">21.49%</div>
+      <p class="statlab">of claims caught by the network <span id="capNetN" class="num"></span></p>
+    </div>
+    <div class="card forest">
+      <div class="bigstat forest" id="capFor">21.09%</div>
+      <p class="statlab">of claims caught by the forest <span id="capForN" class="num"></span></p>
+    </div>
+  </div>
+</div></section>
+
+<!-- ─────────────────────────── cost ─────────────────────────── -->
+<section id="cost"><div class="wrap">
+  <p class="eyebrow">09 &middot; Cost</p>
+  <h2>The surprise: the network is cheaper</h2>
+  <p class="lede" style="margin-top:14px">
+    We expected &ldquo;slightly better but expensive.&rdquo; The opposite is true. The forest walks
+    200 trees for every prediction; the network does two matrix multiplications.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 700 300" role="img" aria-label="Log scale comparison of training and inference cost; the network is faster on every measure">
+      <g id="costPlot" font-family="IBM Plex Mono, monospace" font-size="10.5"></g>
+    </svg>
+    <figcaption>
+      Log scale &mdash; each gridline is ten times the last. Bars are labelled with their real values
+      because the scale compresses the differences.
+    </figcaption>
+  </figure>
+
+  <div class="callout">
+    So <strong>&ldquo;neural networks are expensive&rdquo; is not true here</strong>, and we can show
+    it rather than assert it. The real costs sit somewhere else entirely.
+  </div>
+</div></section>
+
+<!-- ─────────────────────────── failed ─────────────────────────── -->
+<section id="failed"><div class="wrap">
+  <p class="eyebrow">10 &middot; Negative results</p>
+  <h2>Three things that didn't work</h2>
+  <p class="lede" style="margin-top:14px">Worth as much as the things that did.</p>
+
+  <figure>
+    <svg viewBox="0 0 700 220" role="img" aria-label="Three interventions, all of which reduced the score: class weighting, removing the output bias initialisation, and balanced logistic regression">
+      <g id="ablPlot" font-family="IBM Plex Mono, monospace" font-size="10.5"></g>
+    </svg>
+    <figcaption id="ablCap">Hover a bar.</figcaption>
+  </figure>
+
+  <div class="callout warn" style="margin-top:24px">
+    <strong>Why class balancing fails on a ranking metric.</strong> Weighting the rare class pushes
+    every score in the same direction. Gini only reads the <em>order</em>, and shifting everything
+    preserves the order &mdash; so in theory it changes nothing, and in practice it adds noise. We
+    checked on logistic regression too, where it moved the score by
+    <span class="num">&minus;0.00065</span> against a wobble of <span class="num">0.00441</span>:
+    indistinguishable from zero.
+  </div>
+</div></section>
+
+<!-- ─────────────────────────── verdict ─────────────────────────── -->
+<section id="verdict"><div class="wrap">
+  <p class="eyebrow">11 &middot; Decision</p>
+  <h2>More accurate, far faster, still not shipping</h2>
+
+  <div class="split">
+    <div class="verdictcol">
+      <h3>Network wins</h3>
+      <div class="winrow"><span>Gini</span><span><span class="num">+2.03%</span> <span class="tag net">net</span></span></div>
+      <div class="winrow"><span>Claims caught, top 10%</span><span><span class="num">+0.40pp</span> <span class="tag net">net</span></span></div>
+      <div class="winrow"><span>Training, 1 core</span><span><span class="num">19&times;</span> <span class="tag net">net</span></span></div>
+      <div class="winrow"><span>Inference</span><span><span class="num">27&times;</span> <span class="tag net">net</span></span></div>
+      <div class="winrow"><span>Single-row latency</span><span><span class="num">367&times;</span> <span class="tag net">net</span></span></div>
+    </div>
+    <div class="verdictcol">
+      <h3>Forest wins</h3>
+      <div class="winrow"><span>Interpretability</span><span><span class="num">3/5 vs 1/5</span> <span class="tag forest">forest</span></span></div>
+      <div class="winrow"><span>Engineering effort</span><span><span class="num">2h vs 8h</span> <span class="tag forest">forest</span></span></div>
+      <div class="winrow"><span>Fold-to-fold stability</span><span><span class="num">1.9&times;</span> <span class="tag forest">forest</span></span></div>
+      <div class="winrow"><span>Dependencies</span><span><span class="num">0 vs 121MB</span> <span class="tag forest">forest</span></span></div>
+      <div class="winrow"><span>Ships</span><span class="tag forest">yes</span></div>
+    </div>
+  </div>
+
+  <div class="callout warn" style="margin-top:26px">
+    <p style="margin:0 0 .7em"><strong>Why the forest ships anyway.</strong> This model feeds
+    insurance pricing. The project already flags that anonymised features make it impossible to
+    check for hidden discrimination &mdash; a live deployment blocker. The forest at least offers
+    tools to interrogate it; that tooling did real work earlier in the project, justifying the
+    removal of 20 columns.</p>
+    <p style="margin:0">The trade on offer is: <strong>gain three correctly-ordered pairs per
+    thousand, lose the ability to explain any individual decision.</strong> On a pricing model, that
+    is a bad deal.</p>
+  </div>
+
+  <p class="lede" style="margin-top:26px">
+    &ldquo;We tested it properly instead of assuming trees were better. It is about 2% more accurate
+    and much faster to run. We are not shipping it, because it cannot show its working &mdash; and
+    for pricing, that matters more than 2%.&rdquo;
+  </p>
+</div></section>
+</main>
+
+<footer class="wrap">
+  Every figure from the merged run at commit <span class="num">cd7cb20</span> &middot;
+  <span class="num">notebooks/05_neural_network_comparison.ipynb</span> &middot; 5-fold
+  cross-validation on 475,967 policyholders, 17,461 claims. Capture curves recomputed out-of-fold on
+  the same folds. Decision-tree split values in section 04 are illustrative; every other number is
+  measured. &middot; <a href="https://github.com/sonson033/porto-seguro-ml-project">Source and notebook on GitHub</a>
+</footer>
+
+<script>
+const GAINS = {"total_claims":17461,"n_rows":475967,"nn":{"capture":[3.316,6.071,8.327,10.326,12.336,14.409,16.454,18.195,19.884,21.494,23.195,24.964,26.407,27.959,29.471,30.92,32.232,33.583,34.912,36.241,37.552,38.915,40.273,41.492,42.804,44.07,45.244,46.326,47.403,48.548,49.78,50.805,51.962,52.906,54.189,55.226,56.297,57.356,58.215,59.178,60.048,61.039,61.846,62.877,63.799,64.75,65.615,66.651,67.493,68.41,69.314,70.179,71.101,71.978,72.785,73.667,74.429,75.282,76.021,76.834,77.739,78.415,79.142,79.801,80.482,81.135,81.817,82.521,83.26,83.993,84.766,85.528,86.175,86.834,87.452,88.019,88.489,89.119,89.68,90.396,91.043,91.627,92.12,92.767,93.282,93.706,94.227,94.771,95.367,95.756,96.26,96.827,97.285,97.709,98.11,98.517,98.963,99.318,99.656,100.0]},"rf":{"capture":[3.15,5.492,7.84,9.959,12.101,13.928,15.784,17.599,19.552,21.093,22.656,24.168,25.755,27.312,28.916,30.33,31.802,33.183,34.46,35.909,37.134,38.303,39.666,40.857,42.008,43.377,44.677,45.937,47.111,48.268,49.333,50.358,51.4,52.632,53.737,54.825,55.873,56.726,57.706,58.731,59.67,60.598,61.577,62.688,63.656,64.601,65.609,66.64,67.447,68.392,69.349,70.179,71.027,71.817,72.596,73.501,74.268,75.11,76.009,76.777,77.504,78.186,78.93,79.68,80.391,81.124,81.822,82.613,83.248,83.964,84.537,85.15,85.831,86.467,87.229,87.841,88.471,89.113,89.611,90.224,90.877,91.553,92.148,92.778,93.357,93.935,94.439,94.954,95.481,95.928,96.392,96.89,97.234,97.715,98.156,98.568,98.969,99.387,99.731,100.0]}};
+const $ = s => document.querySelector(s);
+const NS = "http://www.w3.org/2000/svg";
+const el = (t, a = {}) => { const n = document.createElementNS(NS, t);
+  for (const k in a) n.setAttribute(k, a[k]); return n; };
+const txt = (x, y, s, a = {}) => { const n = el("text", Object.assign(
+  {x, y, "font-family": "IBM Plex Mono, monospace", "font-size": 10.5,
+   fill: "currentColor"}, a)); n.textContent = s; return n; };
+
+/* ---------- 04 forest fan ---------- */
+(function () {
+  const fan = $("#treeFan"), out = $("#treeNOut"), sl = $("#treeN");
+  // deterministic pseudo-random so the picture is stable across reloads
+  let s = 7; const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const jitter = Array.from({length: 200}, () => (rnd() - .5) * 2);
+  function draw() {
+    const n = +sl.value; out.textContent = n;
+    fan.replaceChildren();
+    const spread = 240 / Math.sqrt(n);
+    for (let i = 0; i < Math.min(n, 200); i++) {
+      const x = 350 + jitter[i] * 240, y = 44 + (i % 7) * 6.2;
+      const c = el("circle", {cx: x, cy: y, r: n > 60 ? 1.6 : 2.6,
+        fill: "var(--forest)", opacity: n > 60 ? .28 : .5});
+      fan.appendChild(c);
+    }
+    const band = el("rect", {x: 350 - spread, y: 30, width: spread * 2, height: 62,
+      fill: "var(--forest)", opacity: .12, rx: 3});
+    fan.insertBefore(band, fan.firstChild);
+    $("#treeCap").innerHTML = n === 1
+      ? "One tree on its own is a coarse guess. <strong>Drag the slider.</strong> Averaging shrinks the spread in proportion to <span class='num'>1/&radic;n</span> &mdash; that is the entire trick, and it is why the forest needs 200 passes at prediction time where the network needs one."
+      : "With <span class='num'>" + n + "</span> trees the spread of the averaged estimate is about <span class='num'>" +
+        (100 / Math.sqrt(n)).toFixed(1) + "%</span> of a single tree's. Accuracy is bought with repetition &mdash; and repetition is what you pay for at prediction time.";
+  }
+  sl.addEventListener("input", draw); draw();
+})();
+
+/* ---------- 05 layer info ---------- */
+(function () {
+  const info = {
+    in:  ["206 input features", "25 categorical columns expanded by one-hot encoding, plus 12 quantity columns imputed and standardised. ps_car_11_cat alone contributes 104 of them."],
+    fc1: ["Linear 206 &rarr; 128 &middot; 26,496 parameters", "Every input connects to every one of the 128 hidden units. This is where essentially all the model's capacity lives."],
+    relu:["ReLU &middot; no parameters", "Keeps positive values, zeroes negatives. Without it the two linear layers would collapse into a single one and the network could only draw straight lines."],
+    drop:["Dropout 0.3 &middot; no parameters", "During training, 30% of hidden units are silenced at random each step so the network can't lean on any one of them. Switched off at prediction time &mdash; leaving it on would make repeat predictions disagree."],
+    fc2: ["Linear 128 &rarr; 1 &middot; 129 parameters", "Collapses to one risk score. Its starting bias is set to logit(3.67%), the true claim rate."],
+    out: ["One risk score", "A single number per policyholder. Only its rank matters &mdash; the sigmoid applied afterwards can't reorder anything, so it has no effect on Gini."]
+  };
+  document.querySelectorAll(".lyr").forEach(g => {
+    const show = () => { const [t, d] = info[g.dataset.l];
+      $("#lyrInfo").innerHTML = '<div class="t">' + t + '</div><div class="d">' + d + "</div>"; };
+    g.addEventListener("mouseenter", show); g.addEventListener("focus", show);
+    g.addEventListener("click", show);
+  });
+})();
+
+/* ---------- 06 tuning scatter ---------- */
+(function () {
+  const cfgs = [
+    {h: "(128, 64)", lr: "1e-3", bs: 1024, peak: .27263, sp: .0091},
+    {h: "(128, 64)", lr: "1e-3", bs: 4096, peak: .27360, sp: .0075},
+    {h: "(128, 64)", lr: "3e-4", bs: 1024, peak: .27545, sp: .0100},
+    {h: "(128, 64)", lr: "3e-4", bs: 4096, peak: .27574, sp: .0239},
+    {h: "(128,)",    lr: "1e-3", bs: 1024, peak: .27521, sp: .0057, pick: 1},
+    {h: "(128,)",    lr: "1e-3", bs: 4096, peak: .27556, sp: .0100},
+    {h: "(128,)",    lr: "3e-4", bs: 1024, peak: .27619, sp: .0119},
+    {h: "(128,)",    lr: "3e-4", bs: 4096, peak: .27607, sp: .0250}
+  ];
+  const L = 62, R = 676, T = 26, B = 268;
+  const x = v => L + (v - .2720) / (.2765 - .2720) * (R - L);
+  const y = v => B - (v - .004) / (.027 - .004) * (B - T);
+  const ax = $("#tuneAxes"), dots = $("#tuneDots");
+  [.005, .010, .015, .020, .025].forEach(g => {
+    ax.appendChild(el("line", {x1: L, y1: y(g), x2: R, y2: y(g),
+      stroke: "currentColor", opacity: .13}));
+    ax.appendChild(txt(L - 8, y(g) + 3.5, g.toFixed(3), {"text-anchor": "end", opacity: .5}));
+  });
+  [.2725, .2735, .2745, .2755].forEach(g => {
+    ax.appendChild(txt(x(g), B + 18, g.toFixed(4), {"text-anchor": "middle", opacity: .5}));
+  });
+  ax.appendChild(el("line", {x1: L, y1: B, x2: R, y2: B, stroke: "currentColor", opacity: .3}));
+  ax.appendChild(txt((L + R) / 2, B + 40, "best score reached  →", {"text-anchor": "middle", opacity: .6}));
+  ax.appendChild(txt(L - 8, T - 10, "instability", {"text-anchor": "end", opacity: .6}));
+  ax.appendChild(txt(L - 8, T + 4, "(lower better)", {"text-anchor": "end", opacity: .45}));
+
+  cfgs.forEach((c, i) => {
+    const g = el("g", {class: "hoverable", tabindex: "0"});
+    g.appendChild(el("circle", {cx: x(c.peak), cy: y(c.sp), r: c.pick ? 9 : 6.5,
+      fill: c.pick ? "var(--net)" : "var(--muted)", opacity: c.pick ? 1 : .55,
+      stroke: "var(--surface)", "stroke-width": 2}));
+    if (c.pick) {
+      g.appendChild(txt(x(c.peak) + 16, y(c.sp) + 4, "chosen", {fill: "var(--net)", "font-weight": 500}));
+    }
+    const show = () => $("#tuneInfo").innerHTML =
+      '<div class="t">' + c.h + " &middot; lr " + c.lr + " &middot; batch " + c.bs +
+      (c.pick ? "  ← chosen" : "") + '</div><div class="d">Best score <span class="num">' +
+      c.peak.toFixed(5) + '</span> &middot; drift after epoch 3 <span class="num">' + c.sp.toFixed(4) +
+      "</span>" + (c.pick ? " &mdash; less than half the drift of anything else, which is why this one was picked."
+        : ". Statistically tied with the chosen config on score, but " + (c.sp / .0057).toFixed(1) + "× less stable.") + "</div>";
+    g.addEventListener("mouseenter", show); g.addEventListener("focus", show); g.addEventListener("click", show);
+    dots.appendChild(g);
+  });
+})();
+
+/* ---------- 07 paired folds ---------- */
+(function () {
+  const nn = [.26831, .28726, .27766, .27561, .28121];
+  const rf = [.26674, .27559, .27303, .27038, .27667];
+  const L = 66, R = 676, T = 24, B = 244;
+  const y = v => B - (v - .264) / (.290 - .264) * (B - T);
+  const ax = $("#pairAxes"), mk = $("#pairMarks");
+  [.266, .270, .274, .278, .282, .286].forEach(g => {
+    ax.appendChild(el("line", {x1: L, y1: y(g), x2: R, y2: y(g), stroke: "currentColor", opacity: .13}));
+    ax.appendChild(txt(L - 8, y(g) + 3.5, g.toFixed(3), {"text-anchor": "end", opacity: .5}));
+  });
+  ax.appendChild(txt(L - 8, T - 8, "Gini", {"text-anchor": "end", opacity: .6}));
+  const step = (R - L) / 5;
+  nn.forEach((v, i) => {
+    const cx = L + step * i + step / 2;
+    const g = el("g", {class: "hoverable", tabindex: "0"});
+    g.appendChild(el("rect", {x: cx - step / 2 + 4, y: T, width: step - 8, height: B - T,
+      fill: "transparent"}));
+    g.appendChild(el("line", {x1: cx, y1: y(rf[i]), x2: cx, y2: y(v),
+      stroke: "currentColor", opacity: .3, "stroke-width": 1.5}));
+    g.appendChild(el("circle", {cx, cy: y(rf[i]), r: 6, fill: "var(--forest)",
+      stroke: "var(--surface)", "stroke-width": 2}));
+    g.appendChild(el("circle", {cx, cy: y(v), r: 6, fill: "var(--net)",
+      stroke: "var(--surface)", "stroke-width": 2}));
+    g.appendChild(txt(cx, B + 20, "fold " + (i + 1), {"text-anchor": "middle", opacity: .55}));
+    g.appendChild(txt(cx, y(v) - 13, "+" + ((v - rf[i]) * 1000).toFixed(1),
+      {"text-anchor": "middle", fill: "var(--net)", "font-size": 10, opacity: .9}));
+    const show = () => $("#pairCap").innerHTML = "<strong>Fold " + (i + 1) +
+      "</strong> &mdash; network <span class='num'>" + v.toFixed(5) +
+      "</span>, forest <span class='num'>" + rf[i].toFixed(5) +
+      "</span>, difference <span class='num'>+" + (v - rf[i]).toFixed(5) + "</span>.";
+    g.addEventListener("mouseenter", show); g.addEventListener("focus", show); g.addEventListener("click", show);
+    mk.appendChild(g);
+  });
+  mk.appendChild(txt((L + R) / 2, 282, "labels show the gap × 1000 · the network is higher on every fold",
+    {"text-anchor": "middle", opacity: .55}));
+})();
+
+/* ---------- 08 capture curve ---------- */
+(function () {
+  const L = 62, R = 672, T = 22, B = 262;
+  const x = p => L + p / 100 * (R - L), y = p => B - p / 100 * (B - T);
+  const ax = $("#gainAxes"), plot = $("#gainPlot");
+  [0, 25, 50, 75, 100].forEach(g => {
+    ax.appendChild(el("line", {x1: L, y1: y(g), x2: R, y2: y(g), stroke: "currentColor", opacity: .13}));
+    ax.appendChild(txt(L - 8, y(g) + 3.5, g + "%", {"text-anchor": "end", opacity: .5}));
+    ax.appendChild(txt(x(g), B + 18, g + "%", {"text-anchor": "middle", opacity: .5}));
+  });
+  ax.appendChild(txt((L + R) / 2, B + 40, "share of the book reviewed  →", {"text-anchor": "middle", opacity: .6}));
+  ax.appendChild(txt(L - 8, T - 8, "claims caught", {"text-anchor": "end", opacity: .6}));
+  ax.appendChild(el("line", {x1: x(0), y1: y(0), x2: x(100), y2: y(100),
+    stroke: "var(--muted)", "stroke-width": 1.5, "stroke-dasharray": "4 4", opacity: .7}));
+
+  const path = a => "M " + a.map((v, i) => x(i + 1) + " " + y(v)).join(" L ");
+  plot.appendChild(el("path", {d: path(GAINS.rf.capture), fill: "none",
+    stroke: "var(--forest)", "stroke-width": 2, "stroke-linejoin": "round"}));
+  plot.appendChild(el("path", {d: path(GAINS.nn.capture), fill: "none",
+    stroke: "var(--net)", "stroke-width": 2, "stroke-linejoin": "round"}));
+
+  const rule = el("line", {y1: T, y2: B, stroke: "currentColor", opacity: .45,
+    "stroke-width": 1, "stroke-dasharray": "3 3"});
+  const dN = el("circle", {r: 5.5, fill: "var(--net)", stroke: "var(--surface)", "stroke-width": 2});
+  const dF = el("circle", {r: 5.5, fill: "var(--forest)", stroke: "var(--surface)", "stroke-width": 2});
+  plot.append(rule, dF, dN);
+
+  const total = GAINS.total_claims, rows = GAINS.n_rows;
+  const fmt = n => n.toLocaleString("en-US");
+  function upd() {
+    const c = +$("#cut").value;
+    const n = GAINS.nn.capture[c - 1], f = GAINS.rf.capture[c - 1];
+    $("#cutOut").textContent = c + "%";
+    rule.setAttribute("x1", x(c)); rule.setAttribute("x2", x(c));
+    dN.setAttribute("cx", x(c)); dN.setAttribute("cy", y(n));
+    dF.setAttribute("cx", x(c)); dF.setAttribute("cy", y(f));
+    $("#capNet").textContent = n.toFixed(2) + "%";
+    $("#capFor").textContent = f.toFixed(2) + "%";
+    $("#capNetN").textContent = "(" + fmt(Math.round(total * n / 100)) + " claims)";
+    $("#capForN").textContent = "(" + fmt(Math.round(total * f / 100)) + " claims)";
+    $("#gainCap").innerHTML = "Reviewing the riskiest <span class='num'>" + c +
+      "%</span> of the book &mdash; <span class='num'>" + fmt(Math.round(rows * c / 100)) +
+      "</span> policies &mdash; the network finds <span class='num'>" + n.toFixed(2) +
+      "%</span> of all claims against the forest's <span class='num'>" + f.toFixed(2) +
+      "%</span>. Random ordering would find <span class='num'>" + c + "%</span>, so the network is <span class='num'>" +
+      (n / c).toFixed(2) + "×</span> better than chance here. The gap between the two models is <span class='num'>" +
+      (n - f >= 0 ? "+" : "") + (n - f).toFixed(2) + "pp</span>.";
+  }
+  $("#cut").addEventListener("input", upd); upd();
+})();
+
+/* ---------- 09 cost ---------- */
+(function () {
+  const rows = [
+    {lab: "Train one fold, 1 CPU core", nn: 5.2, rf: 98.5, u: "s", f: v => v + "s"},
+    {lab: "Full 5-fold run", nn: 35, rf: 115, u: "s", f: v => v + "s"},
+    {lab: "Inference, per row", nn: .00015, rf: .00415, u: "ms", f: v => (v * 1000).toFixed(2) + "µs"},
+    {lab: "Single-row latency", nn: .045, rf: 16.5, u: "ms", f: v => v + "ms"}
+  ];
+  const g = $("#costPlot"), L = 208, R = 648;
+  const lo = Math.log10(1e-4), hi = Math.log10(200);
+  const x = v => L + (Math.log10(v) - lo) / (hi - lo) * (R - L);
+  [1e-4, 1e-3, 1e-2, .1, 1, 10, 100].forEach(t => {
+    g.appendChild(el("line", {x1: x(t), y1: 18, x2: x(t), y2: 246, stroke: "currentColor", opacity: .12}));
+    g.appendChild(txt(x(t), 264, t >= 1 ? t : t.toFixed(4).replace(/0+$/, ""),
+      {"text-anchor": "middle", opacity: .45}));
+  });
+  g.appendChild(txt((L + R) / 2, 286, "seconds · log scale · each gridline is 10× the last",
+    {"text-anchor": "middle", opacity: .55}));
+  rows.forEach((r, i) => {
+    const yb = 34 + i * 56;
+    g.appendChild(txt(L - 12, yb + 14, r.lab, {"text-anchor": "end", opacity: .8, "font-size": 10.5}));
+    [["rf", "var(--forest)", 0], ["nn", "var(--net)", 20]].forEach(([k, col, dy]) => {
+      const v = r[k], w = Math.max(x(v) - L, 2);
+      g.appendChild(el("rect", {x: L, y: yb + dy, width: w, height: 15, rx: 4, fill: col, opacity: .9}));
+      const t = txt(L + w + 8, yb + dy + 12, r.f(v), {opacity: .85, "font-size": 10});
+      g.appendChild(t);
+    });
+    g.appendChild(txt(R + 4, yb + 14, "", {}));
+    const ratio = (r.rf / r.nn).toFixed(0);
+    g.appendChild(txt(R + 28, yb + 24, ratio + "×", {"text-anchor": "middle",
+      fill: "var(--net)", "font-size": 12, "font-weight": 600}));
+  });
+})();
+
+/* ---------- 10 ablations ---------- */
+(function () {
+  const rows = [
+    {lab: "Class weighting (pos_weight)", d: -.00631, noise: .00561,
+     note: "The standard reflex for rare events. It shifts every score the same way, and Gini only reads order — so it cannot help, and here it actively hurt by more than the model's own wobble."},
+    {lab: "Remove output-bias init", d: -.00857, noise: .00532,
+     note: "Starting the output at 50% instead of the true 3.67% claim rate. The optimizer wastes its first few hundred steps correcting one number."},
+    {lab: "Balanced logistic regression", d: -.00065, noise: .00441,
+     note: "The same question asked of a model nobody can accuse of being mistuned. The move is an order of magnitude inside the noise — reweighting simply does not shift a ranking metric."}
+  ];
+  const g = $("#ablPlot"), zero = 430, scale = 26000;
+  g.appendChild(el("line", {x1: zero, y1: 20, x2: zero, y2: 186, stroke: "currentColor", opacity: .35}));
+  g.appendChild(txt(zero, 202, "no change", {"text-anchor": "middle", opacity: .55}));
+  rows.forEach((r, i) => {
+    const yb = 34 + i * 50, w = Math.abs(r.d) * scale, nw = r.noise * scale;
+    const grp = el("g", {class: "hoverable", tabindex: "0"});
+    grp.appendChild(el("rect", {x: zero - nw, y: yb - 4, width: nw * 2, height: 30,
+      fill: "currentColor", opacity: .08, rx: 3}));
+    grp.appendChild(el("rect", {x: zero - w, y: yb, width: w, height: 22, rx: 4,
+      fill: "var(--forest)", opacity: .9}));
+    grp.appendChild(txt(zero - w - 10, yb + 16, r.d.toFixed(5), {"text-anchor": "end", opacity: .85}));
+    grp.appendChild(txt(zero + 14, yb + 16, r.lab, {opacity: .85}));
+    const show = () => $("#ablCap").innerHTML = "<strong>" + r.lab + "</strong> &mdash; " + r.note +
+      " Shaded band is that run's own fold-to-fold wobble (<span class='num'>±" +
+      r.noise.toFixed(5) + "</span>).";
+    grp.addEventListener("mouseenter", show); grp.addEventListener("focus", show); grp.addEventListener("click", show);
+    g.appendChild(grp);
+  });
+  g.appendChild(txt(60, 202, "← worse", {opacity: .5}));
+})();
+
+/* ---------- theme toggle (system / light / dark) ---------- */
+(function () {
+  const b = document.getElementById("themeBtn"), r = document.documentElement;
+  const KEY = "fvn-theme", ORDER = ["system", "light", "dark"];
+  let cur = "system";
+  try { const v = localStorage.getItem(KEY); if (v === "light" || v === "dark") cur = v; } catch (e) {}
+  function apply() {
+    if (cur === "system") r.removeAttribute("data-theme");
+    else r.setAttribute("data-theme", cur);
+    b.textContent = cur === "light" ? "\u2600" : cur === "dark" ? "\u263e" : "\u25d0";
+    b.setAttribute("title", "Theme: " + cur);
+  }
+  apply();
+  b.addEventListener("click", () => {
+    cur = ORDER[(ORDER.indexOf(cur) + 1) % 3];
+    try { cur === "system" ? localStorage.removeItem(KEY) : localStorage.setItem(KEY, cur); } catch (e) {}
+    apply();
+  });
+})();
+</script>
+
+</body>
+</html>
